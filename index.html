@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Catch & Dodge — Arcade Game</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #111;
+      color: #eee;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+      touch-action: none;
+    }
+    canvas {
+      background: #0b0c10;
+      border: 4px solid #333;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      display: block;
+    }
+    .ui-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      text-align: center;
+      padding: 20px;
+    }
+    .ui-overlay.active { display: flex; }
+    h1 { font-size: 2.5rem; margin-bottom: 10px; color: #00ffcc; text-shadow: 0 0 10px #00ffcc; }
+    p { margin-bottom: 20px; font-size: 1.1rem; color: #ccc; }
+    button {
+      background: #00ffcc;
+      border: none;
+      color: #000;
+      padding: 12px 28px;
+      font-size: 1rem;
+      font-weight: bold;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 5px;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    button:hover { background: #66ffe6; transform: scale(1.05); box-shadow: 0 0 15px #00ffcc; }
+    button:active { transform: scale(0.95); }
+    button.secondary { background: #666; color: #fff; }
+    button.secondary:hover { background: #888; box-shadow: 0 0 15px #888; }
+
+    .modal {
+      background: #1a1a1a;
+      border: 3px solid #00ffcc;
+      border-radius: 12px;
+      padding: 30px;
+      max-width: 400px;
+      width: 90%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .modal h2 { color: #00ffcc; margin-bottom: 20px; }
+    .modal input {
+      width: 100%;
+      padding: 10px;
+      font-size: 1rem;
+      margin-bottom: 20px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #222;
+      color: #fff;
+      text-align: center;
+      text-transform: uppercase;
+    }
+    .modal .hint { font-size: 0.85rem; color: #888; margin-bottom: 15px; }
+    .error-msg { color: #ff6666; font-size: 0.9rem; margin-bottom: 15px; display: none; }
+
+    #leaderboardTable {
+      border-collapse: collapse;
+      margin-top: 15px;
+      width: 100%;
+      max-width: 450px;
+    }
+    #leaderboardTable th, #leaderboardTable td {
+      border: 1px solid #444;
+      padding: 8px;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    #leaderboardTable th { background: #00ffcc; color: #000; }
+    #leaderboardTable tr:nth-child(even) td { background: #1a1a1a; }
+
+    .hud {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: #00ffcc;
+      text-shadow: 0 0 5px #000;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .controls-hint {
+      position: absolute;
+      bottom: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.9rem;
+      color: #666;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="gameCanvas" width="400" height="600"></canvas>
+
+  <div class="hud">Skor: <span id="hudScore">0</span> | Nyawa: <span id="hudLives">3</span></div>
+  <div class="controls-hint">Kiri/Kanan atau A/D · Spasi = Mulai</div>
+
+  <!-- Menu Utama -->
+  <div class="ui-overlay active" id="menuOverlay">
+    <h1>CATCH &amp; DODGE</h1>
+    <p>Tangkap buah, hindari bom!</p>
+    <div id="menuLeaderboard" style="max-width: 450px; margin: 0 auto 20px;"></div>
+    <button onclick="startGame()">Mulai Bermain</button>
+    <button class="secondary" onclick="openUsernameModal()">Ganti Nama</button>
+    <button class="secondary" onclick="toggleLeaderboard('menuLeaderboard')">Lihat Papan Peringkat</button>
+  </div>
+
+  <!-- Modal Username -->
+  <div class="ui-overlay" id="usernameOverlay">
+    <div class="modal">
+      <h2>Masukkan Nama</h2>
+      <div class="error-msg" id="usernameError">Nama 1–15 karakter, tanpa kode HTML.</div>
+      <input type="text" id="usernameInput" maxlength="15" placeholder="Nama Kamu">
+      <div class="hint">Contoh: SISWA1</div>
+      <button onclick="saveUsername()">Simpan &amp; Mulai</button>
+    </div>
+  </div>
+
+  <!-- Game Over -->
+  <div class="ui-overlay" id="gameOverOverlay">
+    <h1 style="color:#ff6666;">GAME OVER</h1>
+    <p id="finalScore">Skor Akhir: 0</p>
+    <div id="gameOverLeaderboard" style="max-width: 450px; margin: 0 auto 20px;"></div>
+    <button onclick="backToMenu()">Kembali ke Menu</button>
+    <button class="secondary" onclick="startGame()">Coba Lagi</button>
+  </div>
+
+  <!-- Pause -->
+  <div class="ui-overlay" id="pauseOverlay">
+    <h1 style="color:#ffff66;">PAUSE</h1>
+    <button onclick="togglePause()">Lanjutkan</button>
+    <button class="secondary" onclick="backToMenu()">Kembali ke Menu</button>
+  </div>
+
+/* 1. CONFIG & CANVAS SETUP */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const GAME_WIDTH = 400;
+const GAME_HEIGHT = 600;
+
+const STATE = {
+  MENU: 'MENU',
+  PLAYING: 'PLAYING',
+  PAUSED: 'PAUSED',
+  GAMEOVER: 'GAMEOVER'
+};
+
+let currentState = STATE.MENU;
+let score = 0;
+let lives = 3;
+let gameSpeed = 4;
+let spawnTimer = 0;
+let spawnInterval = 700;
+let lastTime = 0;
+let particles = [];
+
+const PLAYER_WIDTH = 90;
+const PLAYER_HEIGHT = 24;
+const PLAYER_SPEED = 7;
+
+const player = {
+  x: GAME_WIDTH / 2 - PLAYER_WIDTH / 2,
+  y: GAME_HEIGHT - PLAYER_HEIGHT - 20,
+  w: PLAYER_WIDTH,
+  h: PLAYER_HEIGHT,
+  dx: 0
+};
+
+const objects = [];
+const fruitColors = ['#ff4d4d', '#ffd700', '#00ff66', '#ff9900'];
+const bombColor = '#333333';
+
+/* 2. AUDIO SYNTHESIS */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playTone(freq, type, duration, vol = 0.1) {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function sfxCatch() { playTone(900, 'sine', 0.1, 0.15); playTone(1100, 'sine', 0.08, 0.1); }
+function sfxBomb() { playTone(150, 'sawtooth', 0.2, 0.2); }
+function sfxGameOver() {
+  playTone(220, 'sawtooth', 0.3, 0.2);
+  setTimeout(() => playTone(150, 'sawtooth', 0.5, 0.2), 150);
+}
+function sfxStart() { playTone(600, 'square', 0.1, 0.1); playTone(900, 'square', 0.15, 0.1); }
+
+/* 3. INPUT HANDLING */
+const keys = {};
+
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space' && currentState === STATE.MENU) {
+    e.preventDefault();
+    startGame();
+  }
+  if (e.code === 'KeyP' && currentState === STATE.PLAYING) togglePause();
+  if (e.code === 'Escape' && currentState === STATE.PAUSED) togglePause();
+});
+
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+canvas.addEventListener('mousedown', e => { touchStartX = e.clientX; });
+let touchStartX = 0;
+canvas.addEventListener('mousemove', e => {
+  if (currentState !== STATE.PLAYING) return;
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const scaleX = GAME_WIDTH / rect.width;
+  player.x = (mouseX - player.w / 2) * scaleX;
+  clampPlayer();
+});
+
+canvas.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  if (currentState !== STATE.PLAYING) return;
+  const rect = canvas.getBoundingClientRect();
+  const touchX = e.touches[0].clientX - rect.left;
+  const scaleX = GAME_WIDTH / rect.width;
+  player.x = (touchX - player.w / 2) * scaleX;
+  clampPlayer();
+  e.preventDefault();
+}, { passive: false });
+
+window.addEventListener('touchend', e => { e.preventDefault(); }, { passive: false });
+
+function clampPlayer() {
+  if (player.x < 0) player.x = 0;
+  if (player.x + player.w > GAME_WIDTH) player.x = GAME_WIDTH - player.w;
+}
+
+/* 4. GAME STATE & ENTITIES */
+let username = localStorage.getItem('arcade_last_username') || '';
+
+function spawnObject() {
+  const isBomb = Math.random() < 0.25;
+  const w = 26;
+  const h = 26;
+  const x = Math.random() * (GAME_WIDTH - w);
+  const speed = gameSpeed + Math.random() * 2;
+
+  if (isBomb) {
+    objects.push({
+      x, y: -h, w, h, type: 'bomb', speed,
+      color: bombColor
+    });
+  } else {
+    objects.push({
+      x, y: -h, w, h, type: 'fruit', speed,
+      color: fruitColors[Math.floor(Math.random() * fruitColors.length)]
+    });
+  }
+}
+
+function spawnParticles(x, y, color, count = 8) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6,
+      life: 1.0,
+      color
+    });
+  }
+}
+
+function resetGame() {
+  score = 0;
+  lives = 3;
+  gameSpeed = 4;
+  spawnInterval = 700;
+  spawnTimer = 0;
+  objects.length = 0;
+  particles.length = 0;
+  player.x = GAME_WIDTH / 2 - PLAYER_WIDTH / 2;
+  updateHUD();
+}
+
+function updateHUD() {
+  document.getElementById('hudScore').textContent = score;
+  document.getElementById('hudLives').textContent = lives;
+}
+
+/* 5. COLLISION & PHYSICS */
+function rectIntersect(r1, r2) {
+  return (
+    r1.x < r2.x + r2.w &&
+    r1.x + r1.w > r2.x &&
+    r1.y < r2.y + r2.h &&
+    r1.y + r1.h > r2.y
+  );
+}
+
+function updateGame(dt) {
+  if (keys['ArrowLeft'] || keys['KeyA']) player.x -= PLAYER_SPEED;
+  if (keys['ArrowRight'] || keys['KeyD']) player.x += PLAYER_SPEED;
+  clampPlayer();
+
+  spawnTimer += dt;
+  if (spawnTimer >= spawnInterval) {
+    spawnObject();
+    spawnTimer = 0;
+    if (spawnInterval > 350) spawnInterval -= 15;
+    if (gameSpeed < 9) gameSpeed += 0.05;
+  }
+
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const obj = objects[i];
+    obj.y += obj.speed;
+
+    if (rectIntersect(player, obj)) {
+      if (obj.type === 'fruit') {
+        score += 10;
+        sfxCatch();
+        spawnParticles(player.x + player.w / 2, player.y, obj.color, 6);
+      } else {
+        lives -= 1;
+        sfxBomb();
+        spawnParticles(obj.x + obj.w / 2, obj.y + obj.h / 2, '#ff4444', 10);
+        updateHUD();
+        if (lives <= 0) {
+          gameOver();
+        }
+      }
+      objects.splice(i, 1);
+      continue;
+    }
+
+    if (obj.y > GAME_HEIGHT) {
+      objects.splice(i, 1);
+    }
+  }
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= 0.05;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  updateHUD();
+}
+
+/* 6. LOCALSTORAGE LEADERBOARD */
+function sanitize(input) {
+  return String(input)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function getLeaderboard() {
+  try {
+    const raw = localStorage.getItem('arcade_leaderboard');
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveLeaderboard(entries) {
+  localStorage.setItem('arcade_leaderboard', JSON.stringify(entries.slice(0, 10)));
+}
+
+function addLeaderboardEntry(name, scoreVal) {
+  const entries = getLeaderboard();
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('id-ID') + ' ' + now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  entries.push({
+    id: 'run_' + Date.now(),
+    username: sanitize(name).substring(0, 15),
+    score: scoreVal,
+    timestamp: now.getTime(),
+    date: dateStr
+  });
+  entries.sort((a, b) => b.score - a.score);
+  saveLeaderboard(entries);
+}
+
+function renderLeaderboard(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const entries = getLeaderboard();
+  if (entries.length === 0) {
+    container.innerHTML = '<p style="color:#888; font-size:0.9rem;">Belum ada skor.</p>';
+    return;
+  }
+  let html = '<table id="leaderboardTable"><thead><tr><th>#</th><th>Nama</th><th>Skor</th><th>Tanggal</th></tr></thead><tbody>';
+  entries.slice(0, 10).forEach((e, i) => {
+    html += `<tr><td>${i + 1}</td><td>${e.username}</td><td>${e.score}</td><td>${e.date}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function toggleLeaderboard(containerId) {
+  const el = document.getElementById(containerId);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  if (el.style.display === 'block') renderLeaderboard(containerId);
+}
+
+function openUsernameModal() {
+  document.getElementById('usernameInput').value = username || '';
+  document.getElementById('usernameError').style.display = 'none';
+  document.getElementById('usernameOverlay').classList.add('active');
+}
+
+function closeUsernameModal() {
+  document.getElementById('usernameOverlay').classList.remove('active');
+}
+
+function saveUsername() {
+  const input = document.getElementById('usernameInput').value.trim();
+  const errorEl = document.getElementById('usernameError');
+
+  if (input.length < 1 || input.length > 15) {
+    errorEl.style.display = 'block';
+    return;
+  }
+  if (/[<>&"]/.test(input)) {
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  username = input;
+  localStorage.setItem('arcade_last_username', username);
+  closeUsernameModal();
+  startGame();
+}
+
+/* 7. RENDERING & UI */
+function drawPlayer() {
+  ctx.fillStyle = '#00ffcc';
+  ctx.shadowColor = '#00ffcc';
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.roundRect(player.x, player.y, player.w, player.h, 8);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawObject(obj) {
+  ctx.fillStyle = obj.color;
+  ctx.shadowColor = obj.color;
+  ctx.shadowBlur = 10;
+  if (obj.type === 'bomb') {
+    ctx.beginPath();
+    ctx.arc(obj.x + obj.w / 2, obj.y + obj.h / 2, obj.w / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff4444';
+    ctx.fillRect(obj.x + obj.w / 2 - 2, obj.y - 6, 4, 8);
+  } else {
+    ctx.beginPath();
+    ctx.arc(obj.x + obj.w / 2, obj.y + obj.h / 2, obj.w / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath();
+    ctx.arc(obj.x + obj.w / 2 - 6, obj.y + obj.h / 2 - 6, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+  });
+}
+
+function render() {
+  ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  drawParticles();
+  drawPlayer();
+  objects.forEach(drawObject);
+}
+
+/* 8. MAIN GAME LOOP */
+function gameLoop(timestamp) {
+  const dt = timestamp - lastTime;
+  lastTime = timestamp;
+
+  if (currentState === STATE.PLAYING) {
+    updateGame(dt);
+  }
+
+  render();
+
+  if (currentState === STATE.PLAYING || currentState === STATE.PAUSED || currentState === STATE.MENU) {
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+function startGame() {
+  if (!username) {
+    openUsernameModal();
+    return;
+  }
+  resetGame();
+  currentState = STATE.PLAYING;
+  lastTime = performance.now();
+  sfxStart();
+  document.getElementById('menuOverlay').classList.remove('active');
+  document.getElementById('gameOverOverlay').classList.remove('active');
+  document.getElementById('pauseOverlay').classList.remove('active');
+  document.getElementById('usernameOverlay').classList.remove('active');
+  requestAnimationFrame(gameLoop);
+}
+
+function togglePause() {
+  if (currentState === STATE.PLAYING) {
+    currentState = STATE.PAUSED;
+    document.getElementById('pauseOverlay').classList.add('active');
+  } else if (currentState === STATE.PAUSED) {
+    currentState = STATE.PLAYING;
+    document.getElementById('pauseOverlay').classList.remove('active');
+    lastTime = performance.now();
+    requestAnimationFrame(gameLoop);
+  }
+}
+
+function gameOver() {
+  currentState = STATE.GAMEOVER;
+  sfxGameOver();
+  if (username) {
+    addLeaderboardEntry(username, score);
+  }
+  document.getElementById('finalScore').textContent = 'Skor Akhir: ' + score;
+  renderLeaderboard('gameOverLeaderboard');
+  document.getElementById('gameOverOverlay').classList.add('active');
+}
+
+function backToMenu() {
+  currentState = STATE.MENU;
+  document.getElementById('gameOverOverlay').classList.remove('active');
+  document.getElementById('pauseOverlay').classList.remove('active');
+  document.getElementById('menuOverlay').classList.add('active');
+  renderLeaderboard('menuLeaderboard');
+}
+
+// Inisialisasi awal
+renderLeaderboard('menuLeaderboard');
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
